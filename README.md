@@ -305,7 +305,7 @@ DB_USERNAME =
 DB_PASSWORD =
 DB_PORT = 3306
 DB_DATABASE = notes
-# DB_TABLE_PREFIX = notes_
+DB_TABLE_PREFIX = 
 ```
 
 建立调用配置的 `setting` 模块，在 `notes-api-gin` 的 `pkg` 目录下新建 `setting` 目录，新建 `setting.go` 文件，写入内容：
