@@ -36,6 +36,7 @@ func init() {
 	dbHost = sec.Key("DB_HOST").MustString(os.Getenv("DB_HOST"))
 	dbPort = sec.Key("DB_PORT").MustString(os.Getenv("DB_PORT"))
 	dbDatabase = sec.Key("DB_DATABASE").MustString(os.Getenv("DB_DATABASE"))
+	tablePrefix = sec.Key("TABLE_PREFIX").String()
 
 	db, err = gorm.Open(dbConnection, fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
 		dbUserName,
