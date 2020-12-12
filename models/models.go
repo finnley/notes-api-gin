@@ -5,6 +5,7 @@ import (
 	"github.com/finnley/notes-api-gin/pkg/setting"
 	"github.com/finnley/notes-api-gin/pkg/util"
 	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"log"
 	"os"
 )
