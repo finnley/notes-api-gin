@@ -909,3 +909,413 @@ func main() {
 curl 127.0.0.1:8000/ping
 {"message":"pong"}
 ```
+
+# Module
+
+t3_modules
+
+## 接口定义
+
+* 获取模块列表：GET("/modules”)
+* 新建模块：POST("/modules”)
+* 更新指定模块：PUT("/modules/:id”)
+* 删除指定模块：DELETE("/modules/:id”)
+
+## 初始项目数据库
+
+新建 `notes` 数据库，编码为 `utf8_general_ci`，在 `notes` 数据库下，新建 `module` 表
+
+```
+DROP TABLE IF EXISTS `module`;
+CREATE TABLE `module` (
+  `uuid` char(36) NOT NULL COMMENT '主键ID',
+  `name` varchar(255) NOT NULL DEFAULT '' COMMENT '名称',
+  `english_name` varchar(255) NOT NULL DEFAULT '' COMMENT '英文名称',
+  `description` varchar(255) NOT NULL DEFAULT '' COMMENT '功能介绍',
+  `english_description` varchar(255) NOT NULL DEFAULT '' COMMENT '英文介绍',
+  `icon` varchar(255) NOT NULL DEFAULT '' COMMENT 'image path,icon',
+  `cover` varchar(255) NOT NULL DEFAULT '' COMMENT '封面图',
+  `new_feature_deadline` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '新模块截止日期',
+  `landing_page_url` varchar(255) NOT NULL DEFAULT '' COMMENT '跳转页面 url',
+  `state` tinyint(4) unsigned NOT NULL DEFAULT '1' COMMENT '状态，0-关闭 1-启用',
+  `sort` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '排序',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` datetime DEFAULT NULL COMMENT '软删除时间',
+  PRIMARY KEY (`uuid`),
+  KEY `idx_deleted_at` (`deleted_at`),
+  KEY `idx_name` (`name`),
+  KEY `idx_state` (`state`),
+  KEY `idx_sort` (`sort`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模块';
+```
+
+## 编写空壳路由
+
+开始编写路由文件逻辑，在 `routers` 下新建 `api` 目录，因为当前是第一个 `API` 大版本，因此在 `api` 下新建 `v1` 目录，再新建 `module.go` 文件，写入内容：
+
+```
+package v1
+
+import "github.com/gin-gonic/gin"
+
+//新增模块
+func AddModule(c *gin.Context)  {
+
+}
+
+//修改模块
+func EditModule(c *gin.Context)  {
+
+}
+
+//删除模块
+func DeleteModule(c *gin.Context)  {
+
+}
+
+//获取多个模块列表
+func GetModules(c *gin.Context)  {
+
+}
+```
+
+## 注册路由
+
+打开 `routers` 下的 `router.go` 文件，修改文件内容为：
+
+```
+package routers
+
+import (
+	"github.com/finnley/notes-api-gin/pkg/setting"
+	v1 "github.com/finnley/notes-api-gin/routers/api/v1"
+	"github.com/gin-gonic/gin"
+)
+
+func InitRouter() *gin.Engine {
+	r := gin.New()
+
+	r.Use(gin.Logger())
+
+	r.Use(gin.Recovery())
+
+	gin.SetMode(setting.RunMode)
+
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "pong",
+		})
+	})
+
+	apiv1 := r.Group("/api/v1")
+	{
+		//新增模块
+		apiv1.POST("/modules", v1.AddModule)
+		//修改模块
+		apiv1.PUT("/modules/:id", v1.EditModule)
+		//删除模块
+		apiv1.DELETE("/modules/:id", v1.DeleteModule)
+		//获取多个模块列表
+		apiv1.GET("/modules", v1.GetModules)
+	}
+
+	return r
+}
+```
+
+当前目录结构：
+
+```
+.
+├── README.md
+├── conf
+│   └── app.ini
+├── example.go
+├── go.mod
+├── go.sum
+├── main.go
+├── middleware
+├── models
+│   └── models.go
+├── pkg
+│   ├── e
+│   │   ├── code.go
+│   │   └── msg.go
+│   ├── setting
+│   │   └── setting.go
+│   └── util
+│       ├── pagination.go
+│       └── time.go
+├── routers
+│   ├── api
+│   │   └── v1
+│   │       └── module.go
+│   └── router.go
+└── runtime
+```
+
+## 检验路由是否注册成功
+
+执行 `go run main.go`，检查路由规则是否注册成功。
+
+```
+✗ go run main.go
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /ping                     --> github.com/finnley/notes-api-gin/routers.InitRouter.func1 (3 handlers)
+[GIN-debug] GET    /api/v1/modules           --> github.com/finnley/notes-api-gin/routers/api/v1.GetModules (3 handlers)
+[GIN-debug] POST   /api/v1/modules           --> github.com/finnley/notes-api-gin/routers/api/v1.AddModule (3 handlers)
+[GIN-debug] PUT    /api/v1/modules/:id       --> github.com/finnley/notes-api-gin/routers/api/v1.EditModule (3 handlers)
+[GIN-debug] DELETE /api/v1/modules/:id       --> github.com/finnley/notes-api-gin/routers/api/v1.DeleteModule (3 handlers)
+
+```
+
+## 下载依赖包
+
+拉取 `validation` 的依赖包，在后面的接口里会使用到表单验证
+
+```
+go get -u github.com/astaxie/beego/validation
+```
+
+## 功能实现
+
+提前添加需要使用的硬编码和提示消息
+
+1、 code.go
+
+修改 `code.go` 文件
+
+```
+package e
+
+const (
+	SUCCESS = 200
+	ERROR = 500
+	INVALID_PARAMS = 400
+
+	ERROR_EXIST_MODULE = 10001
+	ERROR_NOT_EXIST_MODULE = 10002
+	ERROR_NOT_EXIST_ARTICLE = 10003
+
+	ERROR_AUTH_CHECK_TOKEN_FAIL = 20001
+	ERROR_AUTH_CHECK_TOKEN_TIMEOUT = 20002
+	ERROR_AUTH_TOKEN = 20003
+	ERROR_AUTH = 20004
+)
+```
+
+2、msg.go
+
+修改 `msg.go` 文件
+
+```
+package e
+
+var MsgFlags = map[int]string {
+	SUCCESS : "ok",
+	ERROR : "fail",
+	INVALID_PARAMS : "请求参数错误",
+	ERROR_EXIST_MODULE: "已存在该模块",
+	ERROR_NOT_EXIST_MODULE: "该模块不存在",
+	ERROR_NOT_EXIST_ARTICLE : "该文章不存在",
+	ERROR_AUTH_CHECK_TOKEN_FAIL : "Token鉴权失败",
+	ERROR_AUTH_CHECK_TOKEN_TIMEOUT : "Token已超时",
+	ERROR_AUTH_TOKEN : "Token生成失败",
+	ERROR_AUTH : "Token错误",
+}
+
+func GetMsg(code int) string {
+	msg, ok := MsgFlags[code]
+	if ok {
+		return msg
+	}
+
+	return MsgFlags[ERROR]
+}
+```
+
+#### 新增模块
+
+因为表中 `uuid` 字段是 string 类型，所以先拉取下依赖
+
+```
+go get -u github.com/satori/go.uuid
+```
+
+* models
+
+打开 `models` 目录新增 `module.go`，修改文件（增加 2 个方法）：
+
+```
+package models
+
+type Module struct {
+	BaseModel
+
+	Name               string `json:"name" gorm:"name" comment:"名称" example:"notes" validate:"required"`
+	EnglishName        string `json:"english_name" gorm:"english_name" comment:"英文名称" example:"notes" validate:"required"`
+	Description        string `json:"description" gorm:"description" comment:"描述" example:"notes"`
+	EnglishDescription string `json:"english_description" gorm:"english_description" comment:"英文描述" example:"notes"`
+	Icon               string `json:"icon" gorm:"icon" comment:"图标" example:"icon"`
+	Cover              string `json:"cover" gorm:"cover" comment:"封面" example:"cover"`
+	NewFeatureDeadline int `json:"new_feature_deadline" gorm:"new_feature_deadline" comment:"新功能截止日期" example:"new_feature_deadline"`
+	LandingPageUrl     string `json:"landing_page_url" gorm:"landing_page_url" comment:"新模块跳转链接" example:"landing_page_url"`
+	State              int    `json:"state" gorm:"state" comment:"状态" example:"1"`
+	Sort               int    `json:"sort" gorm:"sort" comment:"状态" example:"1"`
+}
+
+//根据名称判断模块是否存在
+func ExistModuleByName(name string) bool {
+	var module Module
+	db.Select("uuid").Where("name = ?", name).First(&module)
+	if module.Uuid != "" {
+		return true
+	}
+	return false
+}
+
+//新增模块
+func AddModule(name string, englishName string, description string, englishDescription string, icon string, cover string, newFeatureDeadline int, landingPageUrl string, state int, sort int) bool {
+	db.Create(&Module{
+		Name:  name,
+		EnglishName: englishName,
+		Description: description,
+		EnglishDescription: englishDescription,
+		Icon: icon,
+		Cover: cover,
+		NewFeatureDeadline: newFeatureDeadline,
+		LandingPageUrl: landingPageUrl,
+		State: state,
+		Sort: sort,
+	})
+	return true
+}
+```
+
+* routers
+
+打开 `routers` 目录下的 `module.go`，修改文件（变动 AddModule 方法）：
+
+```
+package v1
+
+import (
+	"github.com/finnley/notes-api-gin/models"
+	"github.com/finnley/notes-api-gin/pkg/e"
+	"github.com/gin-gonic/gin"
+	"log"
+	"net/http"
+)
+
+//新增模块
+func AddModule(c *gin.Context)  {
+	var module models.Module
+	err := c.ShouldBind(&module)
+
+	code := e.INVALID_PARAMS
+	if err != nil {
+		log.Fatalf("INVALID_PARAMS: %v", err)
+	}
+
+	if !models.ExistModuleByName(module.Name) {
+		code = e.SUCCESS
+		models.AddModule(module)
+	} else {
+		code = e.ERROR_NOT_EXIST_MODULE
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": code,
+		"msg": e.GetMsg(code),
+		"data": make(map[string]string),
+	})
+}
+
+//修改模块
+func EditModule(c *gin.Context)  {
+
+}
+
+//删除模块
+func DeleteModule(c *gin.Context)  {
+
+}
+
+//获取多个模块列表
+func GetModules(c *gin.Context)  {
+
+}
+```
+
+用 `Postman` 用 `POST` 访问 `http://127.0.0.1:8000/api/v1/modules`，查看 `code` 是否返回 `200` 及 `module` 表中是否有值
+
+请求后发现表中并没有添加数据，这是因为 `gmt_create`,`gmt_modified` 两个字段是非空字段，此时显然是没有插入成功的
+
+#### models callbacks
+
+打开 `models` 目录下的 `module.go` 文件，修改文件内容（修改包引用和增加 2 个方法）：
+
+```
+package models
+
+import (
+	"github.com/jinzhu/gorm"
+	uuid "github.com/satori/go.uuid"
+	"time"
+)
+
+type Module struct {
+	BaseModel
+
+	Name               string `json:"name" gorm:"name" comment:"名称" example:"notes" validate:"required"`
+	EnglishName        string `json:"english_name" gorm:"english_name" comment:"英文名称" example:"notes" validate:"required"`
+	Description        string `json:"description" gorm:"description" comment:"描述" example:"notes"`
+	EnglishDescription string `json:"english_description" gorm:"english_description" comment:"英文描述" example:"notes"`
+	Icon               string `json:"icon" gorm:"icon" comment:"图标" example:"icon"`
+	Cover              string `json:"cover" gorm:"cover" comment:"封面" example:"cover"`
+	NewFeatureDeadline int    `json:"new_feature_deadline" gorm:"new_feature_deadline" comment:"新功能截止日期" example:"new_feature_deadline"`
+	LandingPageUrl     string `json:"landing_page_url" gorm:"landing_page_url" comment:"新模块跳转链接" example:"landing_page_url"`
+	State              int    `json:"state" gorm:"state" comment:"状态" example:"1"`
+	Sort               int    `json:"sort" gorm:"sort" comment:"状态" example:"1"`
+}
+
+...
+
+func (module *Module) BeforeCreate(scope *gorm.Scope) error {
+	// Creating UUID Version 4
+	uuid := uuid.NewV4().String()
+	scope.SetColumn("Uuid", uuid)
+	//scope.SetColumn("GmtCreate", time.Now().Format("2006-01-02 15:04:05"))
+	//scope.SetColumn("GmtModified", time.Now().Format("2006-01-02 15:04:05"))
+	//scope.SetColumn("DeletedAt", sql.NullString{String: "", Valid: false})
+	//scope.SetColumn("DeletedAt", time.Now())
+	scope.SetColumn("GmtCreate", time.Now())
+	scope.SetColumn("GmtModified", time.Now())
+
+	return nil
+}
+
+func (module *Module) BeforeUpdate(scope *gorm.Scope) error {
+	//scope.SetColumn("GmtModified", time.Now().Format("2006-01-02 15:04:05"))
+	scope.SetColumn("GmtModified", time.Now())
+
+	return nil
+}
+```
+
+重启服务，再在用 `Postman` 用 `POST` 访问 `http://127.0.0.1:8000/api/v1/modules` ，
+
+Request:
+
+```
+{
+    "module_name": "note",
+    "state": 1
+}
+```
+
+#### 获取多个模块列表
