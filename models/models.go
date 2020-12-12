@@ -30,7 +30,6 @@ func init() {
 		log.Fatal(2, "Fail to get section 'database': %v", err)
 	}
 
-	fmt.Printf("username: " + os.Getenv("DB_USERNAME"))
 	dbConnection = sec.Key("DB_CONNECTION").String()
 	dbUserName = sec.Key("DB_USERNAME").MustString(os.Getenv("DB_USERNAME"))
 	dbPassword = sec.Key("DB_PASSWORD").MustString(os.Getenv("DB_PASSWORD"))
@@ -38,12 +37,6 @@ func init() {
 	dbPort = sec.Key("DB_PORT").MustString(os.Getenv("DB_PORT"))
 	dbDatabase = sec.Key("DB_DATABASE").MustString(os.Getenv("DB_DATABASE"))
 
-	log.Printf(fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
-		dbUserName,
-		dbPassword,
-		dbHost,
-		dbPort,
-		dbDatabase))
 	db, err = gorm.Open(dbConnection, fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
 		dbUserName,
 		dbPassword,
