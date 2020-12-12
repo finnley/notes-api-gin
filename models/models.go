@@ -6,8 +6,10 @@ import (
 	"github.com/finnley/notes-api-gin/pkg/util"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
+	uuid "github.com/satori/go.uuid"
 	"log"
 	"os"
+	"time"
 )
 
 var db *gorm.DB
@@ -57,6 +59,27 @@ func init() {
 	db.LogMode(true)
 	db.DB().SetMaxIdleConns(10)
 	db.DB().SetMaxOpenConns(100)
+}
+
+func (model *BaseModel) BeforeCreate(scope *gorm.Scope) error {
+	// Creating UUID Version 4
+	uuid := uuid.NewV4().String()
+	scope.SetColumn("Uuid", uuid)
+	//scope.SetColumn("GmtCreate", time.Now().Format("2006-01-02 15:04:05"))
+	//scope.SetColumn("GmtModified", time.Now().Format("2006-01-02 15:04:05"))
+	//scope.SetColumn("DeletedAt", sql.NullString{String: "", Valid: false})
+	//scope.SetColumn("DeletedAt", time.Now())
+	scope.SetColumn("GmtCreate", time.Now())
+	scope.SetColumn("GmtModified", time.Now())
+
+	return nil
+}
+
+func (model *BaseModel) BeforeUpdate(scope *gorm.Scope) error {
+	//scope.SetColumn("GmtModified", time.Now().Format("2006-01-02 15:04:05"))
+	scope.SetColumn("GmtModified", time.Now())
+
+	return nil
 }
 
 func CloseDB() {

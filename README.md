@@ -934,13 +934,13 @@ CREATE TABLE `module` (
   `uuid` char(36) NOT NULL COMMENT '主键ID',
   `name` varchar(255) NOT NULL DEFAULT '' COMMENT '名称',
   `english_name` varchar(255) NOT NULL DEFAULT '' COMMENT '英文名称',
-  `description` varchar(255) NOT NULL DEFAULT '' COMMENT '功能介绍',
+  `description` varchar(255) NOT NULL DEFAULT '' COMMENT '介绍',
   `english_description` varchar(255) NOT NULL DEFAULT '' COMMENT '英文介绍',
   `icon` varchar(255) NOT NULL DEFAULT '' COMMENT 'image path,icon',
-  `cover` varchar(255) NOT NULL DEFAULT '' COMMENT '封面图',
+  `cover` varchar(255) NOT NULL DEFAULT '' COMMENT '封面',
   `new_feature_deadline` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '新模块截止日期',
   `landing_page_url` varchar(255) NOT NULL DEFAULT '' COMMENT '跳转页面 url',
-  `state` tinyint(4) unsigned NOT NULL DEFAULT '1' COMMENT '状态，0-关闭 1-启用',
+  `status` tinyint(4) unsigned NOT NULL DEFAULT '1' COMMENT '状态，0-关闭 1-启用',
   `sort` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '排序',
   `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -948,7 +948,7 @@ CREATE TABLE `module` (
   PRIMARY KEY (`uuid`),
   KEY `idx_deleted_at` (`deleted_at`),
   KEY `idx_name` (`name`),
-  KEY `idx_state` (`state`),
+  KEY `idx_status` (`status`),
   KEY `idx_sort` (`sort`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模块';
 ```
@@ -1199,6 +1199,8 @@ func AddModule(name string, englishName string, description string, englishDescr
 }
 ```
 
+创建了一个 `Module struct{}`，用于 `Gorm` 的使用。并给予了附属属性 `json`，这样子在`c.JSON` 的时候就会自动转换格式，非常的便利
+
 * routers
 
 打开 `routers` 目录下的 `module.go`，修改文件（变动 AddModule 方法）：
@@ -1258,37 +1260,98 @@ func GetModules(c *gin.Context)  {
 
 请求后发现表中并没有添加数据，这是因为 `gmt_create`,`gmt_modified` 两个字段是非空字段，此时显然是没有插入成功的
 
+执行的 `SQL` 如下：
+
+```
+INSERT INTO `module` ( `gmt_create`, `gmt_modified`, `deleted_at`, `name`, `english_name`, `description`, `english_description`, `icon`, `cover`, `new_feature_deadline`, `landing_page_url`, `status`, `sort` )
+VALUES
+	(
+		NULL,
+		NULL,
+		NULL,
+		'Hanfu',
+		'',
+		'',
+		'',
+		'',
+		'',
+		0,
+		'',
+	0,
+	0)
+```
+
+因为每个表添加记录的时候都会把 `gmt_create` 设置为插入到数据表的时候，执行更新操作的时候都会把 `gmt_modified` 修改为当前时间，所以下面对编写统一的时间设置
+
 #### models callbacks
 
-打开 `models` 目录下的 `module.go` 文件，修改文件内容（修改包引用和增加 2 个方法）：
+打开 `models` 目录下的 `models.go` 文件，修改文件内容（修改包引用和增加 2 个方法）：
 
 ```
 package models
 
 import (
+	"fmt"
+	"github.com/finnley/notes-api-gin/pkg/setting"
+	"github.com/finnley/notes-api-gin/pkg/util"
 	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 	uuid "github.com/satori/go.uuid"
+	"log"
+	"os"
 	"time"
 )
 
-type Module struct {
-	BaseModel
+var db *gorm.DB
 
-	Name               string `json:"name" gorm:"name" comment:"名称" example:"notes" validate:"required"`
-	EnglishName        string `json:"english_name" gorm:"english_name" comment:"英文名称" example:"notes" validate:"required"`
-	Description        string `json:"description" gorm:"description" comment:"描述" example:"notes"`
-	EnglishDescription string `json:"english_description" gorm:"english_description" comment:"英文描述" example:"notes"`
-	Icon               string `json:"icon" gorm:"icon" comment:"图标" example:"icon"`
-	Cover              string `json:"cover" gorm:"cover" comment:"封面" example:"cover"`
-	NewFeatureDeadline int    `json:"new_feature_deadline" gorm:"new_feature_deadline" comment:"新功能截止日期" example:"new_feature_deadline"`
-	LandingPageUrl     string `json:"landing_page_url" gorm:"landing_page_url" comment:"新模块跳转链接" example:"landing_page_url"`
-	State              int    `json:"state" gorm:"state" comment:"状态" example:"1"`
-	Sort               int    `json:"sort" gorm:"sort" comment:"状态" example:"1"`
+type BaseModel struct {
+	Uuid        string           `json:"uuid" gorm:"primary_key" `
+	GmtCreate   util.FormatTime  `json:"gmt_create"`
+	GmtModified util.FormatTime  `json:"gmt_modified"`
+	DeletedAt   *util.FormatTime `json:"deleted_at"`
 }
 
-...
+func init() {
+	var (
+		err                                                                   error
+		dbConnection, dbHost, dbPort, dbUserName, dbPassword, dbDatabase, tablePrefix string
+	)
 
-func (module *Module) BeforeCreate(scope *gorm.Scope) error {
+	sec, err := setting.Cfg.GetSection("database")
+	if err != nil {
+		log.Fatal(2, "Fail to get section 'database': %v", err)
+	}
+
+	dbConnection = sec.Key("DB_CONNECTION").String()
+	dbUserName = sec.Key("DB_USERNAME").MustString(os.Getenv("DB_USERNAME"))
+	dbPassword = sec.Key("DB_PASSWORD").MustString(os.Getenv("DB_PASSWORD"))
+	dbHost = sec.Key("DB_HOST").MustString(os.Getenv("DB_HOST"))
+	dbPort = sec.Key("DB_PORT").MustString(os.Getenv("DB_PORT"))
+	dbDatabase = sec.Key("DB_DATABASE").MustString(os.Getenv("DB_DATABASE"))
+	tablePrefix = sec.Key("TABLE_PREFIX").String()
+
+	db, err = gorm.Open(dbConnection, fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
+		dbUserName,
+		dbPassword,
+		dbHost,
+		dbPort,
+		dbDatabase))
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	gorm.DefaultTableNameHandler = func(db *gorm.DB, defaultTableName string) string {
+		return tablePrefix + defaultTableName
+	}
+
+	db.SingularTable(true)
+	db.LogMode(true)
+	db.DB().SetMaxIdleConns(10)
+	db.DB().SetMaxOpenConns(100)
+}
+
+func (model *BaseModel) BeforeCreate(scope *gorm.Scope) error {
 	// Creating UUID Version 4
 	uuid := uuid.NewV4().String()
 	scope.SetColumn("Uuid", uuid)
@@ -1302,11 +1365,15 @@ func (module *Module) BeforeCreate(scope *gorm.Scope) error {
 	return nil
 }
 
-func (module *Module) BeforeUpdate(scope *gorm.Scope) error {
+func (model *BaseModel) BeforeUpdate(scope *gorm.Scope) error {
 	//scope.SetColumn("GmtModified", time.Now().Format("2006-01-02 15:04:05"))
 	scope.SetColumn("GmtModified", time.Now())
 
 	return nil
+}
+
+func CloseDB() {
+	defer db.Close()
 }
 ```
 
@@ -1321,4 +1388,301 @@ Request:
 }
 ```
 
+此时在终端会输出执行的添加SQL:
+
+```
+INSERT INTO `module` (`uuid`,`gmt_create`,`gmt_modified`,`deleted_at`,`name`,`english_name`,`description`,`english_description`,`icon`,`cover`,`new_feature_deadline`,`landing_page_url`,`status`,`sort`) VALUES ('19cf3dc1-63fb-4540-bd17-c3c4622c5a0c','2020-12-12 16:42:31.341289 +0800 CST m=+5.489377305','2020-12-12 16:42:31.341292 +0800 CST m=+5.489380847',NULL,'Hanfu','','','','','',0,'',0,0)
+```
+
+这会到表中也会看到已经添加了一条数据
+
+观察是否添加成功
+
+```
+mysql> select * from module;
++--------------------------------------+-------------+-------+---------------------+---------------------+------------+
+| uuid                                 | module_name | state | gmt_create          | gmt_modified        | deleted_at |
++--------------------------------------+-------------+-------+---------------------+---------------------+------------+
+| 3f72ba3c-e1f1-484f-b4cc-c243d95bea02 | note        |     1 | 2020-11-26 00:46:24 | 2020-11-26 00:46:24 | NULL       |
++--------------------------------------+-------------+-------+---------------------+---------------------+------------+
+1 row in set (0.00 sec)
+
+mysql>
+```
+
+这属于gorm的Callbacks，可以将回调方法定义为模型结构的指针，在创建、更新、查询、删除时将被调用，如果任何回调返回错误，gorm 将停止未来操作并回滚所有更改。
+
+gorm 所支持的回调方法：
+
+* 创建：BeforeSave、BeforeCreate、AfterCreate、AfterSave
+* 更新：BeforeSave、BeforeUpdate、AfterUpdate、AfterSave
+* 删除：BeforeDelete、AfterDelete
+* 查询：AfterFind
+
+当添加同一个模块时，会看到提示该模块已存在的信息
+
+```
+{
+    "code": 10002,
+    "data": {},
+    "msg": "该模块不存在"
+}
+```
+
+#### 编辑模块
+
+1、打开 `routers` 目录下 `v1` 版本的 `module.go`文件，修改内容：
+
+```
+package v1
+
+import (
+	"fmt"
+	"github.com/finnley/notes-api-gin/models"
+	"github.com/finnley/notes-api-gin/pkg/e"
+	"github.com/gin-gonic/gin"
+	"log"
+	"net/http"
+)
+
+//新增模块
+func AddModule(c *gin.Context)  {
+	var module models.Module
+	err := c.ShouldBind(&module)
+
+	code := e.INVALID_PARAMS
+	if err != nil {
+		log.Fatalf("INVALID_PARAMS: %v", err)
+	}
+
+	if !models.ExistModuleByName(module.Name) {
+		code = e.SUCCESS
+		models.AddModule(
+			module.Name,
+			module.EnglishDescription,
+			module.Description,
+			module.EnglishDescription,
+			module.Icon,
+			module.Cover,
+			module.NewFeatureDeadline,
+			module.LandingPageUrl,
+			module.Status,
+			module.Sort)
+	} else {
+		code = e.ERROR_NOT_EXIST_MODULE
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": code,
+		"msg": e.GetMsg(code),
+		"data": make(map[string]string),
+	})
+}
+
+//修改模块
+func EditModule(c *gin.Context)  {
+	id := c.Param("id")
+
+	module := make(map[string]interface{})
+	c.ShouldBind(&module)
+	fmt.Printf("%#v\n", module)
+
+	//TODO 数据校验
+
+	code := e.INVALID_PARAMS
+	if models.ExistModuleByID(id) {
+		code = e.SUCCESS
+		models.EditModule(id, module)
+	} else {
+		code = e.ERROR_NOT_EXIST_ARTICLE
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": code,
+		"msg": e.GetMsg(code),
+		"data": make(map[string]string),
+	})
+}
+
+//删除模块
+func DeleteModule(c *gin.Context)  {
+
+}
+
+//获取多个模块列表
+func GetModules(c *gin.Context)  {
+
+}
+```
+
+2、打开 `models` 下的 `moduele.go`, 修改文件内容：
+
+```
+...
+func ExistModuleByID(uuid string) bool {
+	var module Module
+	db.Select("uuid").Where("uuid = ?", uuid).First(&module)
+	if module.Uuid != "" {
+		return true
+	}
+	return false
+}
+
+func EditModule(uuid string, data interface{}) bool {
+	db.Model(&Module{}).Where("uuid = ?", uuid).Updates(data)
+	return true
+}
+```
+
+#### 删除模块
+
+1、routers
+
+打开 `routers` 目录下 `v1` 版本的 `module.go`文件，修改内容：
+
+```
+package v1
+
+import (
+	"fmt"
+	"github.com/finnley/notes-api-gin/models"
+	"github.com/finnley/notes-api-gin/pkg/e"
+	"github.com/gin-gonic/gin"
+	"log"
+	"net/http"
+)
+
+//新增模块
+func AddModule(c *gin.Context)  {
+	var module models.Module
+	err := c.ShouldBind(&module)
+
+	code := e.INVALID_PARAMS
+	if err != nil {
+		log.Fatalf("INVALID_PARAMS: %v", err)
+	}
+
+	if !models.ExistModuleByName(module.Name) {
+		code = e.SUCCESS
+		models.AddModule(
+			module.Name,
+			module.EnglishDescription,
+			module.Description,
+			module.EnglishDescription,
+			module.Icon,
+			module.Cover,
+			module.NewFeatureDeadline,
+			module.LandingPageUrl,
+			module.Status,
+			module.Sort)
+	} else {
+		code = e.ERROR_NOT_EXIST_MODULE
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": code,
+		"msg": e.GetMsg(code),
+		"data": make(map[string]string),
+	})
+}
+
+//修改模块
+func EditModule(c *gin.Context)  {
+	id := c.Param("id")
+
+	module := make(map[string]interface{})
+	c.ShouldBind(&module)
+	fmt.Printf("%#v\n", module)
+
+	//TODO 数据校验
+
+	code := e.INVALID_PARAMS
+	if models.ExistModuleByID(id) {
+		code = e.SUCCESS
+		models.EditModule(id, module)
+	} else {
+		code = e.ERROR_NOT_EXIST_ARTICLE
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": code,
+		"msg": e.GetMsg(code),
+		"data": make(map[string]string),
+	})
+}
+
+//删除模块
+func DeleteModule(c *gin.Context)  {
+	id := c.Param("id")
+
+	code := e.INVALID_PARAMS
+
+	// TODO 数据校验
+
+	if models.ExistModuleByID(id) {
+		code = e.SUCCESS
+		models.DeleteModule(id)
+	} else {
+		code = e.ERROR_NOT_EXIST_MODULE
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": code,
+		"msg": e.GetMsg(code),
+		"data": make(map[string]string),
+	})
+}
+
+//获取多个模块列表
+func GetModules(c *gin.Context)  {
+
+}
+```
+
+2、打开 `models` 下的 `module.go`, 修改文件内容：
+
+```
+...
+func DeleteModule(uuid string) bool {
+	db.Where("uuid = ?", uuid).Delete(&Module{})
+	return true
+}
+```
+
+#### 验证功能
+
+重启服务，用 `Postman`
+
+* `DELETE` 访问 `http://127.0.0.1:8000/api/v1/module/fa4a89b6-83e6-452d-b1d5-eb9ccea71bb0` ，查看 code 是否返回 200
+
 #### 获取多个模块列表
+
+* models
+
+在 `models` 目录下的 `module.go`，写入文件内容：
+
+```
+package models
+
+...
+
+func GetModules(pageNum int, pageSize int, maps interface{}) (modules []Module) {
+	db.Where(maps).Offset(pageNum).Limit(pageSize).Find(&modules)
+
+	return
+}
+
+func GetModuleTotal(maps interface{}) (count int) {
+	db.Model(&Module{}).Where(maps).Count(&count)
+
+	return
+}
+```
+
+看到 `return`，而后面没有跟着变量，可以看到在函数末端，我们已经显示声明了返回值，这个变量在函数体内也可以直接使用，因为它在一开始就被声明了
+
+db 是哪里来的? 因为在同个 `models` 包下，因此 `db *gorm.DB` 是可以直接使用的
+
+* router
+
+打开 `routers` 目录下 `v1` 版本的 `module.go`
