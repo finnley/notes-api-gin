@@ -7,7 +7,6 @@ import (
 	"github.com/jinzhu/gorm"
 	"log"
 	"os"
-	"strconv"
 )
 
 var db *gorm.DB
@@ -22,8 +21,7 @@ type BaseModel struct {
 func init() {
 	var (
 		err                                                                   error
-		dbPort                                                                int
-		dbConnection, dbHost, dbUserName, dbPassword, dbDatabase, tablePrefix string
+		dbConnection, dbHost, dbPort, dbUserName, dbPassword, dbDatabase, tablePrefix string
 	)
 
 	sec, err := setting.Cfg.GetSection("database")
@@ -32,11 +30,10 @@ func init() {
 	}
 
 	dbConnection = sec.Key("DB_CONNECTION").String()
-	dbHost = sec.Key("DB_HOST").MustString(os.Getenv("DB_HOST"))
-	port, _ := strconv.Atoi(os.Getenv("DB_PORT"))
-	dbPort = sec.Key("DB_PORT").MustInt(port)
-	dbDatabase = sec.Key("DB_USERNAME").MustString(os.Getenv("DB_USERNAME"))
+	dbUserName = sec.Key("DB_USERNAME").MustString(os.Getenv("DB_USERNAME"))
 	dbPassword = sec.Key("DB_PASSWORD").MustString(os.Getenv("DB_PASSWORD"))
+	dbHost = sec.Key("DB_HOST").MustString(os.Getenv("DB_HOST"))
+	dbPort = sec.Key("DB_PORT").MustString(os.Getenv("DB_PORT"))
 	dbDatabase = sec.Key("DB_DATABASE").MustString(os.Getenv("DB_DATABASE"))
 
 	db, err = gorm.Open(dbConnection, fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",

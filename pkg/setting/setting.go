@@ -2,6 +2,7 @@ package setting
 
 import (
 	"github.com/go-ini/ini"
+	"github.com/joho/godotenv"
 	"log"
 	"os"
 	"strconv"
@@ -27,6 +28,11 @@ func init()  {
 	Cfg, err = ini.Load("conf/app.ini")
 	if err != nil {
 		log.Fatalf("Fail to parse 'conf/app.ini': %v", err)
+	}
+
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatalf("Fail to parse 'env': %v", err)
 	}
 
 	LoadBase()
