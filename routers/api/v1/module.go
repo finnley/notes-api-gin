@@ -114,15 +114,27 @@ func GetModules(c *gin.Context)  {
 	code := e.SUCCESS
 
 	//data["lists"] = models.GetModules(util.GetPage(c), setting.PageSize, maps)
-	lists := models.GetModules(util.GetPage(c), setting.PageSize, maps)
-	for index := range lists {
-		if lists[index].NewFeatureDeadline > time.Now().Second() {
-			lists[index].NewFeatureDeadline = 1
+	modules := models.GetModules(util.GetPage(c), setting.PageSize, maps)
+
+	var list []models.ModuleData
+
+	for key, val := range modules {
+		var module models.ModuleData
+		module.Uuid = val.Uuid
+		module.Name = val.Name
+		module.Description = val.Description
+		module.Icon = val.Icon
+		module.Cover = val.Cover
+		if modules[key].NewFeatureDeadline > time.Now().Second() {
+			module.IsNew = 1
 		} else {
-			lists[index].NewFeatureDeadline = 0
+			module.IsNew = 0
 		}
+		module.LandingPageUrl = val.LandingPageUrl
+
+		list = append(list, module)
 	}
-	data["lists"] = lists
+	data["lists"] = list
 	data["total"] = models.GetModuleTotal(maps)
 
 	c.JSON(http.StatusOK, gin.H{

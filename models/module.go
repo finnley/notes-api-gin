@@ -15,6 +15,17 @@ type Module struct {
 	Sort               int    `json:"sort" gorm:"sort" comment:"状态" example:"1"`
 }
 
+// 返回模块列表数据
+type ModuleData struct {
+	Uuid           string `json:"uuid"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	Icon           string `json:"icon"`
+	Cover          string `json:"cover"`
+	IsNew          int    `json:"is_new"`
+	LandingPageUrl string `json:"landing_page_url"`
+}
+
 //根据名称判断模块是否存在
 func ExistModuleByName(name string) bool {
 	var module Module

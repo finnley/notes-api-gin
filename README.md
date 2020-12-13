@@ -1664,6 +1664,32 @@ func DeleteModule(uuid string) bool {
 ```
 package models
 
+type Module struct {
+	BaseModel
+
+	Name               string `json:"name" gorm:"name" comment:"名称" example:"notes" validate:"required"`
+	EnglishName        string `json:"english_name" gorm:"english_name" comment:"英文名称" example:"notes" validate:"required"`
+	Description        string `json:"description" gorm:"description" comment:"描述" example:"notes"`
+	EnglishDescription string `json:"english_description" gorm:"english_description" comment:"英文描述" example:"notes"`
+	Icon               string `json:"icon" gorm:"icon" comment:"图标" example:"icon"`
+	Cover              string `json:"cover" gorm:"cover" comment:"封面" example:"cover"`
+	NewFeatureDeadline int    `json:"new_feature_deadline" gorm:"new_feature_deadline" comment:"新功能截止日期" example:"new_feature_deadline"`
+	LandingPageUrl     string `json:"landing_page_url" gorm:"landing_page_url" comment:"新模块跳转链接" example:"landing_page_url"`
+	Status             int    `json:"status" gorm:"state" comment:"状态" example:"1"`
+	Sort               int    `json:"sort" gorm:"sort" comment:"状态" example:"1"`
+}
+
+// 返回模块列表数据
+type ModuleData struct {
+	Uuid           string `json:"uuid"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	Icon           string `json:"icon"`
+	Cover          string `json:"cover"`
+	IsNew          int    `json:"is_new"`
+	LandingPageUrl string `json:"landing_page_url"`
+}
+
 ...
 
 func GetModules(pageNum int, pageSize int, maps interface{}) (modules []Module) {
@@ -1686,3 +1712,66 @@ db 是哪里来的? 因为在同个 `models` 包下，因此 `db *gorm.DB` 是�
 * router
 
 打开 `routers` 目录下 `v1` 版本的 `module.go`
+
+```
+...
+
+//获取多个模块列表
+func GetModules(c *gin.Context)  {
+	moduleName := c.Query("name")
+
+	maps := make(map[string]interface{})
+	data := make(map[string]interface{})
+
+	if moduleName != "" {
+		maps["module_name"] = moduleName
+	}
+
+	var state int = -1
+	if arg := c.Query("status"); arg != "" {
+		state = com.StrTo(arg).MustInt()
+		maps["status"] = state
+	}
+
+	code := e.SUCCESS
+
+	//data["lists"] = models.GetModules(util.GetPage(c), setting.PageSize, maps)
+	modules := models.GetModules(util.GetPage(c), setting.PageSize, maps)
+
+	var list []models.ModuleData
+
+	for key, val := range modules {
+		var module models.ModuleData
+		module.Uuid = val.Uuid
+		module.Name = val.Name
+		module.Description = val.Description
+		module.Icon = val.Icon
+		module.Cover = val.Cover
+		if modules[key].NewFeatureDeadline > time.Now().Second() {
+			module.IsNew = 1
+		} else {
+			module.IsNew = 0
+		}
+		module.LandingPageUrl = val.LandingPageUrl
+
+		list = append(list, module)
+	}
+	data["lists"] = list
+	data["total"] = models.GetModuleTotal(maps)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": code,
+		"msg": e.GetMsg(code),
+		"data": data,
+	})
+}
+```
+
+1. `c.Query` 可用于获取 `?name=test&state=1` 这类 URL 参数，而 `c.DefaultQuery` 则支持设置一个默认值
+2. `code` 变量使用了 `e` 模块的错误编码，这正是先前规划好的错误码，方便排错和识别记录
+3. `util.GetPage` 保证了各接口的 page 处理是一致的
+4. `c *gin.Context` 是 `Gin` 很重要的组成部分，可以理解为上下文，它允许我们在中间件之间传递变量、管理流、验证请求的 JSON 和呈现 JSON 响应
+
+在本机执行 `curl 127.0.0.1:8000/api/v1/modules`，正确的返回值为 `{"code":200,"data":{"lists":[...],"total":0},"msg":"ok"}`。
+
+在获取模块列表接口中，我们可以根据 `name`、`state`、`page` 来筛选查询条件，分页的步长可通过 `app.ini` 进行配置，以 `lists`、`total` 的组合返回达到分页效果。
