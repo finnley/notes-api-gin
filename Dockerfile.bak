@@ -1,0 +1,9 @@
+FROM golang:latest
+
+ENV GOPROXY https://goproxy.cn,direct
+WORKDIR $GOPATH/src/github.com/finnley/notes-api-gin
+COPY . $GOPATH/src/github.com/finnley/notes-api-gin
+RUN go build .
+
+EXPOSE 8000
+ENTRYPOINT ["./notes-api-gin"]

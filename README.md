@@ -1775,3 +1775,497 @@ func GetModules(c *gin.Context)  {
 在本机执行 `curl 127.0.0.1:8000/api/v1/modules`，正确的返回值为 `{"code":200,"data":{"lists":[...],"total":0},"msg":"ok"}`。
 
 在获取模块列表接口中，我们可以根据 `name`、`state`、`page` 来筛选查询条件，分页的步长可通过 `app.ini` 进行配置，以 `lists`、`total` 的组合返回达到分页效果。
+
+# Docker 部署
+
+t4_deploy
+
+## 目标
+
+将 `notes-api-gin` 应用部署到 `Docker`
+
+## Docker 
+
+![](https://images.notes.xuepincat.com/docker/docker.jpeg)
+
+`Docker` 是一个开源的轻量级容器技术，让开发者可以打包他们的应用以及应用运行的上下文环境到一个可移植的镜像中，然后发布到任何支持 `Docker` 的系统上运行。 通过容器技术，在几乎没有性能开销的情况下，`Docker` 为应用提供了一个隔离运行环境
+
+* 简化配置
+* 代码流水线管理
+* 提高开发效率
+* 隔离应用
+* 快速、持续部署
+
+## 编写 Dockerfile
+
+在 `notes-api-gin` 项目根目录创建 `Dockerfile` 文件，写入内容
+
+```
+FROM golang:latest
+
+ENV GOPROXY https://goproxy.cn,direct
+WORKDIR $GOPATH/src/github.com/finnley/notes-api-gin
+COPY . $GOPATH/src/github.com/finnley/notes-api-gin
+RUN go build .
+
+EXPOSE 8000
+ENTRYPOINT ["./notes-api-gin"]
+```
+
+#### 作用
+
+`golang:latest` 镜像为基础镜像，将工作目录设置为 `$GOPATH/src/notes-api-gin`，并将当前上下文目录的内容复制到 `$GOPATH/src/notes-api-gin` 中
+
+在进行 `go build` 编译完毕后，将容器启动程序设置为 `./notes-api-gin`，也就是我们所编译的可执行文件
+
+注意 `notes-api-gi`n` 在 `docker` 容器里编译，并没有在宿主机现场编译
+
+#### 说明
+
+`Dockerfile` 文件是用于定义 `Docker` 镜像生成流程的配置文件，文件内容是一条条指令，每一条指令构建一层，因此每一条指令的内容，就是描述该层应当如何构建；这些指令应用于基础镜像并最终创建一个新的镜像
+
+可以认为用于快速创建自定义的 `Docker` 镜像
+
+* FROM
+
+指定基础镜像（必须有的指令，并且必须是第一条指令）
+
+* WORKDIR
+
+格式为 `WORKDIR <工作目录路径>`
+
+使用 `WORKDIR` 指令可以来指定工作目录（或者称为当前目录），以后各层的当前目录就被改为指定的目录，如果目录不存在，`WORKDIR` 会帮你建立目录
+
+* COPY
+
+格式：
+
+```
+COPY <源路径>... <目标路径>
+COPY ["<源路径1>",... "<目标路径>"]
+```
+
+`COPY` 指令将从构建上下文目录中 <源路径> 的文件/目录 `复制` 到新的一层的镜像内的 <目标路径> 位置
+
+* RUN
+
+用于执行命令行命令
+
+格式：`RUN <命令>`
+
+* EXPOSE
+
+格式为 `EXPOSE <端口 1> [<端口 2>…]`
+
+`EXPOSE` 指令是声明运行时容器提供服务端口，这只是一个声明，在运行时并不会因为这个声明应用就会开启这个端口的服务
+
+在 `Dockerfile` 中写入这样的声明有两个好处
+
+1. 帮助镜像使用者理解这个镜像服务的守护端口，以方便配置映射
+2. 运行时使用随机端口映射时，也就是 `docker run -P` 时，会自动随机映射 `EXPOSE` 的端口
+
+* ENTRYPOINT
+
+`ENTRYPOINT` 的格式和 `RUN` 指令格式一样，分为两种格式
+
+1. exec 格式：
+
+```
+<ENTRYPOINT> "<CMD>"
+```
+
+2. shell 格式：
+
+```
+ENTRYPOINT [ "curl", "-s", "http://ip.cn" ]
+```
+
+`ENTRYPOINT` 指令是指定容器启动程序及参数
+
+## 构建镜像
+
+`notes-api-gin` 的项目根目录下执行 `docker build -t notes-api-docker .`
+
+该命令作用是创建/构建镜像，`-t` 指定名称为 `notes-api-docker`，. 构建内容为当前上下文目录
+
+```
+✗ docker build -t notes-api-docker .
+Sending build context to Docker daemon  593.4kB
+Step 1/7 : FROM golang:latest
+ ---> 6d8772fbd285
+Step 2/7 : ENV GOPROXY https://goproxy.cn,direct
+ ---> Using cache
+ ---> 935022d58444
+Step 3/7 : WORKDIR $GOPATH/src/github.com/finnley/notes-api-gin
+ ---> Using cache
+ ---> 48f8ff19e858
+Step 4/7 : COPY . $GOPATH/src/github.com/finnley/notes-api-gin
+ ---> fab1dc54377a
+Step 5/7 : RUN go build .
+ ---> Running in 9316ca0085fd
+go: downloading github.com/joho/godotenv v1.3.0
+go: downloading github.com/go-ini/ini v1.62.0
+go: downloading github.com/unknwon/com v1.0.1
+go: downloading github.com/gin-gonic/gin v1.6.3
+go: downloading github.com/satori/go.uuid v1.2.0
+go: downloading github.com/jinzhu/gorm v1.9.16
+go: downloading github.com/gin-contrib/sse v0.1.0
+go: downloading github.com/mattn/go-isatty v0.0.12
+go: downloading github.com/ugorji/go v1.2.1
+go: downloading github.com/golang/protobuf v1.4.3
+go: downloading gopkg.in/yaml.v2 v2.4.0
+go: downloading github.com/go-playground/validator/v10 v10.4.1
+go: downloading github.com/go-sql-driver/mysql v1.5.0
+go: downloading github.com/jinzhu/inflection v1.0.0
+go: downloading github.com/ugorji/go/codec v1.2.1
+go: downloading golang.org/x/sys v0.0.0-20201211090839-8ad439b19e0f
+go: downloading google.golang.org/protobuf v1.25.0
+go: downloading github.com/go-playground/universal-translator v0.17.0
+go: downloading golang.org/x/crypto v0.0.0-20201208171446-5f87f3452ae9
+go: downloading github.com/leodido/go-urn v1.2.0
+go: downloading github.com/go-playground/locales v0.13.0
+# github.com/finnley/notes-api-gin
+./main.go:10:6: main redeclared in this block
+	previous declaration at ./example.go:5:6
+The command '/bin/sh -c go build .' returned a non-zero code: 2
+```
+
+构建的时候提示下面错误，只需要将根目录下的 `example.go` 文件删掉即可，这个文件是之前测试用的
+
+删除之后重新构建
+
+`docker build -t notes-api-docker .`
+
+```
+✗ docker build -t notes-api-docker .
+Sending build context to Docker daemon  594.4kB
+Step 1/7 : FROM golang:latest
+ ---> 6d8772fbd285
+Step 2/7 : ENV GOPROXY https://goproxy.cn,direct
+ ---> Using cache
+ ---> 935022d58444
+Step 3/7 : WORKDIR $GOPATH/src/github.com/finnley/notes-api-gin
+ ---> Using cache
+ ---> 48f8ff19e858
+Step 4/7 : COPY . $GOPATH/src/github.com/finnley/notes-api-gin
+ ---> fa5638f4c809
+Step 5/7 : RUN go build .
+ ---> Running in 04ab66b77af5
+go: downloading github.com/gin-gonic/gin v1.6.3
+go: downloading github.com/go-ini/ini v1.62.0
+go: downloading github.com/joho/godotenv v1.3.0
+go: downloading github.com/satori/go.uuid v1.2.0
+go: downloading github.com/jinzhu/gorm v1.9.16
+go: downloading github.com/unknwon/com v1.0.1
+go: downloading github.com/gin-contrib/sse v0.1.0
+go: downloading github.com/mattn/go-isatty v0.0.12
+go: downloading github.com/ugorji/go v1.2.1
+go: downloading gopkg.in/yaml.v2 v2.4.0
+go: downloading github.com/golang/protobuf v1.4.3
+go: downloading github.com/go-playground/validator/v10 v10.4.1
+go: downloading github.com/go-sql-driver/mysql v1.5.0
+go: downloading github.com/jinzhu/inflection v1.0.0
+go: downloading github.com/ugorji/go/codec v1.2.1
+go: downloading golang.org/x/sys v0.0.0-20201211090839-8ad439b19e0f
+go: downloading google.golang.org/protobuf v1.25.0
+go: downloading github.com/go-playground/universal-translator v0.17.0
+go: downloading golang.org/x/crypto v0.0.0-20201208171446-5f87f3452ae9
+go: downloading github.com/go-playground/locales v0.13.0
+go: downloading github.com/leodido/go-urn v1.2.0
+Removing intermediate container 04ab66b77af5
+ ---> a31fe52805b1
+Step 6/7 : EXPOSE 8000
+ ---> Running in 2f16e32a8be6
+Removing intermediate container 2f16e32a8be6
+ ---> 9a15272ad6db
+Step 7/7 : ENTRYPOINT ["./notes-api-gin"]
+ ---> Running in a9a1cefee6f0
+Removing intermediate container a9a1cefee6f0
+ ---> 97838407ad1f
+Successfully built 97838407ad1f
+Successfully tagged notes-api-docker:latest
+```
+
+## 验证镜像
+
+查看所有的镜像，确定刚刚构建的 `notes-api-docker` 镜像是否存在
+
+```
+docker images
+✗ docker images
+REPOSITORY                     TAG       IMAGE ID       CREATED              SIZE
+notes-api-docker               latest    97838407ad1f   About a minute ago   955MB
+...
+```
+
+## 创建并运行一个新容器
+
+执行命令 `docker run -p 8000:8000 notes-api-docker`
+
+```
+docker run -p 8000:8000 notes-api-docker
+2020/12/15 15:52:57 dial tcp 127.0.0.1:3306: connect: connection refused
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /ping                     --> github.com/finnley/notes-api-gin/routers.InitRouter.func1 (3 handlers)
+[GIN-debug] POST   /api/v1/modules           --> github.com/finnley/notes-api-gin/routers/api/v1.AddModule (3 handlers)
+[GIN-debug] PUT    /api/v1/modules/:id       --> github.com/finnley/notes-api-gin/routers/api/v1.EditModule (3 handlers)
+[GIN-debug] DELETE /api/v1/modules/:id       --> github.com/finnley/notes-api-gin/routers/api/v1.DeleteModule (3 handlers)
+[GIN-debug] GET    /api/v1/modules           --> github.com/finnley/notes-api-gin/routers/api/v1.GetModules (3 handlers)
+
+```
+
+运行成功，你以为大功告成了吗？
+
+你想太多了，仔细看看控制台的输出了一条错误 `dial tcp 127.0.0.1:3306: connect: connection refused`
+
+发现是 `MySQL` 的问题
+
+## MySQL
+
+#### 拉取镜像
+
+从 `Docker` 的公共仓库 `Dockerhub` 下载 `MySQL:5.7` 镜像（国内建议配个镜像）
+
+```
+docker pull mysql:5.7
+```
+
+#### 创建并运行一个新容器
+
+运行 `MySQL` 容器，并设置执行成功后返回容器 `ID`
+
+```
+docker run --name mysql -p 33060:3306 -e MYSQL_ROOT_PASSWORD=123 -d mysql:5.7
+6c1dca0c5c0172080c3b71370370e73a3e70f9b48086bf5f3a535971e86f1f4f
+```
+
+#### 连接 MySQL
+
+略
+
+## 删除镜像
+
+由于原本的镜像存在问题，我们需要删除它，此处有几种做法
+
+* 删除原本有问题的镜像，重新构建一个新镜像
+* 重新构建一个不同 name、tag 的新镜像
+
+删除原本的有问题的镜像，`-f` 是强制删除及其关联状态
+
+若不执行 `-f`，需要执行 `docker ps -a` 查到所关联的容器，将其 `rm` 解除两者依赖关系
+
+```
+✗ docker rmi -f notes-api-docker
+Untagged: notes-api-docker:latest
+Deleted: sha256:97838407ad1ff5c7919234b0ed6e5105e6356fa0e02cf2d682468a7a1f32dff5
+Deleted: sha256:9a15272ad6db8a0a8b38d012bd72c8f6c521cd892e8503e3392014e1fa68135e
+Deleted: sha256:a31fe52805b1cfb94e86a77d675980731bafc581287a89eea29732df1610c8db
+Deleted: sha256:7a01168947d5e02de7fc2d53b2d11856a9df3b09b1d0e7a7dbf0ca24273bc6f7
+Deleted: sha256:fa5638f4c809ce4f1ee290b5201b007fbf3197270c4d65a0c7c59a6a9842df15
+Deleted: sha256:106cb795a6d443c2c0ecb9defb8463d0471626b4208669d72cd31efe689a469d
+```
+
+## 修改配置文件
+
+将项目的配置文件 `.env`，内容修改为
+
+```
+# debug or release
+RUN_MODE=debug
+
+JWT_SECRET=!@)*#)!@U#@*!@!)
+
+HTTP_PORT=8000
+READ_TIMEOUT=60
+WRITE_TIMEOUT=60
+
+DB_CONNECTION=mysql
+# 127.0.0.1:3306
+DB_HOST=mysql
+DB_USERNAME=root
+DB_PASSWORD=123
+DB_PORT=3306
+DB_DATABASE=notes
+# DB_TABLE_PREFIX=notes_
+
+PAGE_SIZE=10
+```
+
+## 重新构建镜像
+
+重复先前的步骤，回到 `notes-api-gin` 的项目根目录下执行 `docker build -t notes-api-docker .`
+
+## 创建并运行一个新容器
+
+#### 关联
+
+* 将 `Golang` 容器和 `MySQL` 容器关联起来，那么我们需要怎么做呢？
+
+增加命令 `--link mysql:mysql` 让 `Golang` 容器与 `MySQL` 容器互联；通过 `--link`，可以在容器内直接使用其关联的容器别名进行访问，而不通过 IP，但是 `--link` 只能解决单机容器间的关联，在分布式多机的情况下，需要通过别的方式进行连接
+
+#### 运行
+
+执行命令 `docker run --link mysql:mysql -p 8000:8000 notes-api-docker`
+
+```
+✗ docker run --link mysql:mysql -p 8000:8000 notes-api-docker
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /ping                     --> github.com/finnley/notes-api-gin/routers.InitRouter.func1 (3 handlers)
+[GIN-debug] POST   /api/v1/modules           --> github.com/finnley/notes-api-gin/routers/api/v1.AddModule (3 handlers)
+[GIN-debug] PUT    /api/v1/modules/:id       --> github.com/finnley/notes-api-gin/routers/api/v1.EditModule (3 handlers)
+[GIN-debug] DELETE /api/v1/modules/:id       --> github.com/finnley/notes-api-gin/routers/api/v1.DeleteModule (3 handlers)
+[GIN-debug] GET    /api/v1/modules           --> github.com/finnley/notes-api-gin/routers/api/v1.GetModules (3 handlers)
+2020/12/15 16:11:10 dial tcp 127.0.0.1:3306: connect: connection refused
+
+```
+
+#### 结果
+
+检查启动输出、接口测试、数据库内数据，均正常；我们的 `Golang` 容器和 `MySQL` 容器成功关联运行，大功告成 :)
+
+## Review
+
+#### 思考
+
+* 为什么 `notes-api-docker` 占用空间这么大？（可用 docker ps -as | grep notes-api-docker 查看）
+* MySQL 容器直接这么使用，数据存储到哪里去了？
+
+## 创建超小的 Golang 镜像
+
+* 为什么 `notes-api-docker` 占用空间这么大？（可用 docker ps -as | grep notes-api-docker 查看）
+
+这是因为 `FROM golang:latest` 拉取的是官方 golang 镜像，包含 Golang 的编译和运行环境，外加一堆 GCC、build 工具，相当齐全
+
+这是有问题的，我们可以不在 Golang 容器中现场编译的，压根用不到那些东西，我们只需要一个能够运行可执行文件的环境即可
+
+#### 构建 Scratch 镜像
+
+`Scratch` 镜像，简洁、小巧，基本是个空镜像
+
+* 修改 `Dockerfile`
+
+```
+FROM scratch
+
+WORKDIR $GOPATH/src/github.com/finnley/notes-api-gin
+COPY . $GOPATH/src/github.com/finnley/notes-api-gin
+
+EXPOSE 8000
+CMD ["./notes-api-gin"]
+```
+
+* 编译可执行文件
+
+```
+CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o notes-api-gin .
+```
+
+编译所生成的可执行文件会依赖一些库，并且是动态链接。在这里因为使用的是 `scratch` 镜像，它是空镜像，因此我们需要将生成的可执行文件静态链接所依赖的库
+
+* 构建镜像
+
+```
+✗ docker build -t notes-api-docker-scratch .
+Sending build context to Docker daemon  17.19MB
+Step 1/5 : FROM scratch
+ --->
+Step 2/5 : WORKDIR $GOPATH/src/github.com/finnley/notes-api-gin
+ ---> Using cache
+ ---> 29ece8ab7341
+Step 3/5 : COPY . $GOPATH/src/github.com/finnley/notes-api-gin
+ ---> ef8d0ac7bdfb
+Step 4/5 : EXPOSE 8000
+ ---> Running in 2065f55c20af
+Removing intermediate container 2065f55c20af
+ ---> 867acc3146ca
+Step 5/5 : CMD ["./notes-api-gin"]
+ ---> Running in 17f72a1557c2
+Removing intermediate container 17f72a1557c2
+ ---> 6c47c90aaedb
+Successfully built 6c47c90aaedb
+Successfully tagged notes-api-docker-scratch:latest
+```
+
+注意，假设 `Golang` 应用没有依赖任何的配置等文件，是可以直接把可执行文件给拷贝进去即可，其他都不必关心
+
+这里可以有好几种解决方案
+
+* 依赖文件统一管理挂载
+* go-bindata 一下
+...
+
+因此这里如果解决了文件依赖的问题后，就不需要把目录给 `COPY` 进去了
+
+#### 运行
+
+```
+✗ docker run --link mysql:mysql -p 8000:8000 notes-api-docker-scratch
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /ping                     --> github.com/finnley/notes-api-gin/routers.InitRouter.func1 (3 handlers)
+[GIN-debug] POST   /api/v1/modules           --> github.com/finnley/notes-api-gin/routers/api/v1.AddModule (3 handlers)
+[GIN-debug] PUT    /api/v1/modules/:id       --> github.com/finnley/notes-api-gin/routers/api/v1.EditModule (3 handlers)
+[GIN-debug] DELETE /api/v1/modules/:id       --> github.com/finnley/notes-api-gin/routers/api/v1.DeleteModule (3 handlers)
+[GIN-debug] GET    /api/v1/modules           --> github.com/finnley/notes-api-gin/routers/api/v1.GetModules (3 handlers)
+```
+
+成功运行，程序也正常接收请求
+
+接下来我们再看看占用大小，执行 `docker ps -as` 命令
+
+```
+✗ docker ps -as
+CONTAINER ID   IMAGE                      COMMAND                  CREATED              STATUS                     PORTS                                     NAMES                SIZE
+9102c806964a   notes-api-docker-scratch   "./notes-api-gin"        About a minute ago   Up About a minute          0.0.0.0:8000->8000/tcp                    thirsty_cartwright   0B (virtual 17MB)
+19468f2322e2   notes-api-docker           "./notes-api-gin"        12 minutes ago       Exited (2) 4 minutes ago                                             elegant_heisenberg   0B (virtual 955MB)
+```
+
+从结果而言，占用大小以 `Scratch` 镜像为基础的容器完胜，完成目标
+
+## MySQL 挂载数据卷
+
+倘若不做任何干涉，在每次启动一个 `MySQL` 容器时，数据库都是空的。另外容器删除之后，数据就丢失了（还有各类意外情况），非常糟糕！
+
+#### 数据卷
+
+数据卷 是被设计用来持久化数据的，它的生命周期独立于容器，`Docker` 不会在容器被删除后自动删除 数据卷，并且也不存在垃圾回收这样的机制来处理没有任何容器引用的 数据卷。如果需要在删除容器的同时移除数据卷。可以在删除容器的时候使用 `docker rm -v` 这个命令
+
+数据卷 是一个可供一个或多个容器使用的特殊目录，它绕过 UFS，可以提供很多有用的特性：
+
+* 数据卷 可以在容器之间共享和重用
+* 对 数据卷 的修改会立马生效
+* 对 数据卷 的更新，不会影响镜像
+* 数据卷 默认会一直存在，即使容器被删除
+
+    注意：数据卷 的使用，类似于 Linux 下对目录或文件进行 mount，镜像中的被指定为挂载点的目录中的文件会隐藏掉，能显示看的是挂载的 数据卷。
+    
+#### 如何挂载
+
+首先创建一个目录用于存放数据卷；示例目录 `/data/docker-mysql`，注意 `--name` 原本名称为 `mysql` 的容器，需要将其删除 `docker rm`
+
+```
+docker stop mysql
+docker rm mysql
+```
+
+运行 MySQL 容器并挂载
+
+```
+✗ docker run --name mysql -p 33060:3306 -e MYSQL_ROOT_PASSWORD=123 -v mysql-data:/var/lib/mysql -d mysql:5.7
+3c01dc9f70844c0ea50fbe18ebccec96d26856f0114bd9187dedf273294c6c97
+```
+ 
+创建成功，检查目录 `mysql-data`，下面多了不少数据库文件
+
+#### 验证
+
+接下来交由你进行验证，目标是创建一些测试表和数据，然后删除当前容器，重新创建的容器，数据库数据也依然存在（当然了数据卷指向要一致）
+
