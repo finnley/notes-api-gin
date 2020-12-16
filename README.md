@@ -2269,3 +2269,43 @@ docker rm mysql
 
 接下来交由你进行验证，目标是创建一些测试表和数据，然后删除当前容器，重新创建的容器，数据库数据也依然存在（当然了数据卷指向要一致）
 
+## docker-compose
+
+## 创建 docker-compose.yml
+
+```
+version: '3'
+
+services:
+  notes-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 8000:8000
+    networks:
+      - my-bridge
+
+  mysql:
+    image: mysql:5.7
+    ports:
+      - 33060:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: 123
+      MYSQL_DATABASE: notes
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - my-bridge
+
+volumes:
+  mysql-data:
+
+networks:
+  my-bridge:
+    driver: bridge
+```
+
+## 启动
+
+
