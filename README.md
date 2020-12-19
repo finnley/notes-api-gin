@@ -2308,4 +2308,448 @@ networks:
 
 ## 启动
 
+# JWT 身份校验
+
+## 目标
+
+前面已经完成了模块API的编写，但是还存在一些非常严重的问题，比如现在的API是可以随意调用的，这显然不安全，所以接下来打算通过 `jwt-go(GoDoc)` 的方式来解决这个问题
+
+## 创建 auth 表
+
+```
+CREATE TABLE `auth` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(50) DEFAULT '' COMMENT '账号',
+  `password` varchar(50) DEFAULT '' COMMENT '密码',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+INSERT INTO `auth` (`id`, `username`, `password`) VALUES (null, 'test', 'test123456');
+```
+
+## 下载依赖包
+
+首先下载 `jwt-go` 的依赖包
+
+```
+go get -u github.com/dgrijalva/jwt-go
+```
+
+## 编写 jwt 工具包
+
+编写一个 `jwt` 的工具包，在 `pkg`下的 `util` 目录新建 `jwt.go`，写入文件内容：
+
+```
+package util
+
+import (
+	"github.com/dgrijalva/jwt-go"
+	"github.com/finnley/notes-api-gin/pkg/setting"
+	"time"
+)
+
+var jwtSecret = []byte(setting.JwtSecret)
+
+type Claims struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	jwt.StandardClaims
+}
+
+func GenerateToken(username, password string) (string, error) {
+	nowTime := time.Now()
+	expireTime := nowTime.Add(3 * time.Hour)
+
+	claims := Claims{
+		username,
+		password,
+		jwt.StandardClaims {
+			ExpiresAt : expireTime.Unix(),
+			Issuer : "gin-blog",
+		},
+	}
+
+	tokenClaims := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token, err := tokenClaims.SignedString(jwtSecret)
+
+	return token, err
+}
+
+func ParseToken(token string) (*Claims, error) {
+	tokenClaims, err := jwt.ParseWithClaims(token, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+
+	if tokenClaims != nil {
+		if claims, ok := tokenClaims.Claims.(*Claims); ok && tokenClaims.Valid {
+			return claims, nil
+		}
+	}
+
+	return nil, err
+}
+```
+
+在这个工具包，涉及到下面知识点
+
+* `NewWithClaims(method SigningMethod, claims Claims)`，`method` 对应着 `SigningMethodHMAC struct{}`，其包含 `SigningMethodHS256`、`SigningMethodHS384`、`SigningMethodHS512` 三种 `crypto.Hash` 方案
+* `func (t *Token) SignedString(key interface{})` 该方法内部生成签名字符串，再用于获取完整、已签名的token
+* `func (p *Parser) ParseWithClaims` 用于解析鉴权的声明，方法内部主要是具体的解码和校验的过程，最终返回 `*Token`
+* `func (m MapClaims) Valid()` 验证基于时间的声明 `exp`, `iat`, `nbf`，注意如果没有任何声明在令牌中，仍然会被认为是有效的。并且对于时区偏差没有计算方法
+
+有了 `jwt` 工具包，接下来我们要编写要用于 `Gin` 的中间件，我们在 `middleware` 下新建 `jwt` 目录，新建 `jwt.go` 文件，写入内容：
+
+```
+package jwt
+
+import (
+	"github.com/finnley/notes-api-gin/pkg/e"
+	"github.com/finnley/notes-api-gin/pkg/util"
+	"github.com/gin-gonic/gin"
+	"net/http"
+	"time"
+)
+
+func JWT() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var code int
+		var data interface{}
+
+		code = e.SUCCESS
+		token := c.Query("token")
+		if token == "" {
+			code = e.INVALID_PARAMS
+		} else {
+			claims, err := util.ParseToken(token)
+			if err != nil {
+				code = e.ERROR_AUTH_CHECK_TOKEN_FAIL
+			} else if time.Now().Unix() > claims.ExpiresAt {
+				code = e.ERROR_AUTH_CHECK_TOKEN_TIMEOUT
+			}
+		}
+
+		if code != e.SUCCESS {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code" : code,
+				"msg" : e.GetMsg(code),
+				"data" : data,
+			})
+
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+```
+
+## 获取Token
+
+如何调用?，我们还要获取Token?
+
+1. 新增一个获取Token的 API
+
+在 `models` 下新建 `auth.go` 文件，写入内容：
+
+```
+package models
+
+type Auth struct {
+	ID int `gorm:"primary_key" json:"id"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func CheckAuth(username, password string) bool {
+	var auth Auth
+	db.Select("id").Where(Auth{Username: username, Password: password}).First(&auth)
+	if auth.ID > 0 {
+		return true
+	}
+
+	return false
+}
+```
+
+在 `routers` 下的 `api` 目录新建 `auth.go` 文件，写入内容：
+
+```
+package api
+
+import (
+	"github.com/astaxie/beego/validation"
+	"github.com/finnley/notes-api-gin/models"
+	"github.com/finnley/notes-api-gin/pkg/e"
+	"github.com/finnley/notes-api-gin/pkg/util"
+	"github.com/gin-gonic/gin"
+	"log"
+	"net/http"
+)
+
+type auth struct {
+	Username string `valid:"Required" MaxSize(50)`
+	Password string `valid:"Required" MaxSize(50)`
+}
+
+func GetAuth(c *gin.Context)  {
+	username := c.Query("username")
+	password := c.Query("password")
+
+	valid := validation.Validation{}
+	a := auth{Username: username, Password: password}
+	ok, _ := valid.Valid(&a)
+
+	data := make(map[string]interface{})
+	code := e.INVALID_PARAMS
+	if ok {
+		isExist := models.CheckAuth(username, password)
+		if isExist {
+			token, err := util.GenerateToken(username, password)
+			if err != nil {
+				code = e.ERROR_AUTH_TOKEN
+			} else {
+				data["token"] = token
+				code = e.SUCCESS
+			}
+		} else {
+			code = e.ERROR_AUTH
+		}
+	} else {
+		for _, err := range valid.Errors {
+			log.Printf(err.Key, err.Message)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code": "code",
+		"msg": e.GetMsg(code),
+		"data": data,
+	})
+}
+```
+
+打开 `routers` 目录下的 `router.go` 文件，修改文件内容（新增获取 token 的方法）：
+
+```
+package routers
+
+import (
+	"github.com/finnley/notes-api-gin/pkg/setting"
+	"github.com/finnley/notes-api-gin/routers/api"
+	v1 "github.com/finnley/notes-api-gin/routers/api/v1"
+	"github.com/gin-gonic/gin"
+)
+
+func InitRouter() *gin.Engine {
+	r := gin.New()
+
+	r.Use(gin.Logger())
+
+	r.Use(gin.Recovery())
+
+	gin.SetMode(setting.RunMode)
+
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "pong",
+		})
+	})
+
+    // 获取 token
+	r.GET("/auth", api.GetAuth)
+
+	apiv1 := r.Group("/api/v1")
+	{
+		...
+	}
+
+	return r
+}
+```
+
+## 验证 Token
+
+获取 `token` 的 `API` 方法就到这里啦，让我们来测试下是否可以正常使用吧！
+
+重启服务后，用 `GET` 方式访问 `http://127.0.0.1:8000/auth?username=test&password=test123456`，查看返回值是否正确
+
+```
+{
+    "code": "code",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InRlc3QiLCJwYXNzd29yZCI6InRlc3QxMjM0NTYiLCJleHAiOjE2MDgzNjEyOTUsImlzcyI6Imdpbi1ibG9nIn0.iZN7Hgvv7p8C_Qfiy31WpftTBkR-AseRYhbibBenjhk"
+    },
+    "msg": "ok"
+}
+```
+
+有了 `token` 的 `API`，表示调用成功了
+
+## 将中间件接入 Gin
+
+接下来将中间件接入到 `Gin` 的访问流程中
+
+打开 `routers` 目录下的 `router.go` 文件，修改文件内容（新增引用包和中间件引用）
+
+```
+package routers
+
+import (
+	"github.com/finnley/notes-api-gin/middleware/jwt"
+	"github.com/finnley/notes-api-gin/pkg/setting"
+	"github.com/finnley/notes-api-gin/routers/api"
+	v1 "github.com/finnley/notes-api-gin/routers/api/v1"
+	"github.com/gin-gonic/gin"
+)
+
+func InitRouter() *gin.Engine {
+	r := gin.New()
+
+	r.Use(gin.Logger())
+
+	r.Use(gin.Recovery())
+
+	gin.SetMode(setting.RunMode)
+
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "pong",
+		})
+	})
+
+	// 获取 token
+	r.GET("/auth", api.GetAuth)
+
+	apiv1 := r.Group("/api/v1")
+	apiv1.Use(jwt.JWT())
+	{
+		...
+	}
+
+	return r
+}
+```
+
+当前目录结构：
+
+```
+.
+├── Dockerfile
+├── Dockerfile.bak
+├── README.md
+├── conf
+│   └── app.ini
+├── data
+│   └── notes.sql
+├── docker-compose.yml
+├── go.mod
+├── go.sum
+├── main.go
+├── middleware
+│   └── jwt
+│       └── jwt.go
+├── models
+│   ├── auth.go
+│   ├── models.go
+│   └── module.go
+├── notes-api-gin
+├── pkg
+│   ├── e
+│   │   ├── code.go
+│   │   └── msg.go
+│   ├── setting
+│   │   └── setting.go
+│   └── util
+│       ├── jwt.go
+│       ├── pagination.go
+│       └── time.go
+├── routers
+│   ├── api
+│   │   ├── auth.go
+│   │   └── v1
+│   │       └── module.go
+│   └── router.go
+└── runtime
+```
+
+到这里，`JWT` 编写就完成啦！
+
+## 验证功能
+
+* http://127.0.0.1:8000/api/v1/modules?status=1
+
+```
+{
+    "code": 400,
+    "data": null,
+    "msg": "请求参数错误"
+}
+```
+
+* http://127.0.0.1:8000/api/v1/modules?status=1&token=123
+
+```
+{
+    "code": 20001,
+    "data": null,
+    "msg": "Token鉴权失败"
+}
+```
+
+需要访问 `http://127.0.0.1:8000/auth?username=test&password=test123456`，得到 `token`
+
+```
+{
+    "code": "code",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InRlc3QiLCJwYXNzd29yZCI6InRlc3QxMjM0NTYiLCJleHAiOjE2MDgzNjIwOTgsImlzcyI6Imdpbi1ibG9nIn0.DXR8-cWbESSevS85PAKDLPA3tihumQYOmnyX5Xi5X3A"
+    },
+    "msg": "ok"
+}
+```
+
+再用包含token的 URL 参数去访问我们的应用 API，
+
+访问 `http://127.0.0.1:8000/api/v1/modules?status=1&token=eyJhbGciOi...`，检查接口返回值
+
+```
+{
+    "code": 200,
+    "data": {
+        "lists": [
+            {
+                "uuid": "0eb56800-aedd-44cb-bdf6-98c6ce233f07",
+                "name": "music",
+                "description": "",
+                "icon": "",
+                "cover": "",
+                "is_new": 0,
+                "landing_page_url": ""
+            },
+            {
+                "uuid": "a8cbb6c8-2a3c-4cab-b1e8-78992b8db8c4",
+                "name": "video",
+                "description": "",
+                "icon": "",
+                "cover": "",
+                "is_new": 1,
+                "landing_page_url": ""
+            },
+            {
+                "uuid": "f99db74f-1ab8-422d-9a28-893d038ff810",
+                "name": "note",
+                "description": "",
+                "icon": "",
+                "cover": "",
+                "is_new": 0,
+                "landing_page_url": ""
+            }
+        ],
+        "total": 3
+    },
+    "msg": "ok"
+}
+```
+
+返回正确，至此我们的 `jwt-go` 在 `Gin` 中的就完成了！
 
