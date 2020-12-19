@@ -4,9 +4,9 @@ import (
 	"github.com/astaxie/beego/validation"
 	"github.com/finnley/notes-api-gin/models"
 	"github.com/finnley/notes-api-gin/pkg/e"
+	"github.com/finnley/notes-api-gin/pkg/logging"
 	"github.com/finnley/notes-api-gin/pkg/util"
 	"github.com/gin-gonic/gin"
-	"log"
 	"net/http"
 )
 
@@ -40,7 +40,8 @@ func GetAuth(c *gin.Context)  {
 		}
 	} else {
 		for _, err := range valid.Errors {
-			log.Printf(err.Key, err.Message)
+			//log.Printf(err.Key, err.Message)
+			logging.Info(err.Key, err.Message)
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
